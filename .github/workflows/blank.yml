@@ -1,62 +1,54 @@
-name: Make TWRP Device
-
+name: Make TWRP Device Tree
 on:
   workflow_dispatch:
     inputs:
-      LIBRARY_NAME:
-        description: 'LIBRARY_NAME'
-        required: true
-        default: 'Twrp_Device_Genter'
       IMG_URL:
-        description: 'IMG_URL'
+        description: 'recovery.img 或 boot.img 直链（必须单文件）'
         required: true
         default: 'https://github.com/momo54181/action_build_twrp_device_tree/raw/main/recovery.img'
 
 jobs:
   build:
+    # 仅仓库所有者可以手动触发
     if: github.event.repository.owner.id == github.event.sender.id
     runs-on: ubuntu-22.04
-
-    
     steps:
-    - name: Check Out
-      uses: actions/checkout@main
-      
-    - name: Prepare the environment
-      run: |
-        sudo apt update
-        sudo apt -y install python3 python3-pip python3-pip cpio wget python-is-python3
-        
-    - name: Set variables
-      run: |
-        echo "name=date::$(date +%F)" >> $GITHUB_OUTPUT
-      id: var
-      
-    - name: Install TWRP generator 
-      run: |
-        pip3 install twrpdtgen
-        mkdir dt
-    
-    - name: Download boot or recovery img
-      run: |
-        wget ${{ github.event.inputs.IMG_URL }}
-        ls
-      
-    - name: Start build
-      run: |
-        python3 -m twrpdtgen -o dt/ *.img
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: ZIP device tree
-      run: |
-        zip -r DeviceTree.zip ./dt
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3 python3-pip cpio wget python-is-python3
 
-    - name: Upload to Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          ./DeviceTree.zip
-        name: TWRP_Device_Tree-${{ github.run_id }}
-        tag_name: ${{ github.run_id }}
-        body: DeviceTree for twrp
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 安装 twrpdtgen
+        run: |
+          pip3 install --quiet twrpdtgen
+          mkdir -p dt
+
+      - name: 下载镜像
+        run: |
+          set -euo pipefail
+          wget -q --show-progress ${{ github.event.inputs.IMG_URL }} -O downloaded.img
+          ls -lh downloaded.img
+
+      - name: 生成 device tree
+        run: |
+          set -euo pipefail
+          python3 -m twrpdtgen -o dt/ downloaded.img
+
+      - name: 打包
+        run: |
+          zip -r TWRP_DeviceTree.zip ./dt -x "*.git*"
+
+      - name: 发布到 Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: twrp-${{ github.run_number }}
+          name: TWRP_DeviceTree-${{ github.run_number }}
+          body: |
+            镜像 URL: ${{ github.event.inputs.IMG_URL }}
+            生成时间: ${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+          files: TWRP_DeviceTree.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
